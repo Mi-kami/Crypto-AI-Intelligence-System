@@ -1,0 +1,22 @@
+# Environment variables - NEVER push to GitHub
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# Data files
+data/raw/
+*.csv
+*.parquet
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
