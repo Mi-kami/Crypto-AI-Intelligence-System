@@ -1,4 +1,4 @@
-# Crypto Intelligence Dashboard
+# Crypto AI Intelligence System
 
 > AI-powered intelligence system for cryptocurrency markets. Building in public.
 
