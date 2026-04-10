@@ -15,6 +15,7 @@ import requests
 import pandas as pd
 from datetime import datetime, timezone
 from loguru import logger
+import random
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -38,9 +39,9 @@ ASSET_ID_MAP = {
 }
 
 # How many seconds to wait between API calls to respect the 30/min rate limit
-# 60 seconds / 30 requests = 2 seconds minimum between calls
+# 60 seconds / 30 requests = 6 seconds minimum between calls
 # We use 2.5 to give ourselves a small safety buffer
-RATE_LIMIT_DELAY = 6.0
+RATE_LIMIT_DELAY = 15.0
 
 
 # ── Helper Functions ─────────────────────────────────────────────────────────
@@ -79,6 +80,52 @@ def _floor_to_hour(dt: datetime) -> datetime:
     """
     return dt.replace(minute=0, second=0, microsecond=0)
 
+def _request_with_backoff(url: str, params: dict = None, max_retries: int = 3) -> requests.Response:
+    """
+    Execute a GET request with exponential backoff and jitter on 429 responses.
+
+    Retries up to max_retries times when rate limited. Each retry waits
+    exponentially longer plus random jitter to avoid thundering herd.
+
+    Args:
+        url: Full endpoint URL
+        params: Query parameters to send with the request
+        max_retries: Maximum number of retry attempts (default 3)
+
+    Returns:
+        requests.Response object on success
+
+    Raises:
+        requests.HTTPError: If max retries exhausted or non-429 HTTP error
+        requests.RequestException: On connection or timeout failure
+    """
+    last_exception = None
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, params=params or {}, timeout=30)
+            response.raise_for_status()
+            return response
+
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 429:
+                wait = (2 ** attempt) + random.uniform(0, 1)
+                logger.warning(
+                    f"Rate limited (429) on attempt {attempt + 1}/{max_retries} — "
+                    f"retrying in {wait:.1f}s"
+                )
+                time.sleep(wait)
+                last_exception = e
+            else:
+                # Non-429 HTTP errors are not retryable — fail immediately
+                raise
+
+        except requests.exceptions.RequestException as e:
+            last_exception = e
+            logger.error(f"Request failed on attempt {attempt + 1}/{max_retries}: {e}")
+
+    logger.error(f"All {max_retries} retry attempts exhausted for {url}")
+    raise last_exception
 
 # ── Core Fetch Functions ─────────────────────────────────────────────────────
 
@@ -137,12 +184,7 @@ def fetch_ohlcv(
     logger.info(f"Fetching OHLCV for {symbol} ({coin_id}) | days={days}")
 
     try:
-        response = requests.get(url, params=params, timeout=30)
-
-        # Raise an exception if the HTTP status code indicates an error
-        # e.g. 429 = rate limited, 404 = not found, 500 = server error
-        response.raise_for_status()
-
+        response = _request_with_backoff(url=url, params=params)
         data = response.json()
 
     except requests.exceptions.Timeout:
@@ -213,8 +255,7 @@ def fetch_global_market_data() -> dict:
     logger.info("Fetching global market data from CoinGecko")
 
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
+        response = _request_with_backoff(url=url)
         data = response.json().get("data", {})
 
     except requests.exceptions.RequestException as e:

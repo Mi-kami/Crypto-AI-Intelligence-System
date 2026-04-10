@@ -92,6 +92,8 @@ def _validate_assets(df: pd.DataFrame) -> pd.DataFrame:
 
     return filtered_df
 
+#------constraint functions --------
+
 def harmonise_price_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Validate, filter, and normalise raw CoinGecko OHLCV price data.
@@ -144,7 +146,7 @@ def harmonise_market_data(global_dict: dict) -> pd.DataFrame:
 
 def harmonise_news_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Validate, filter, and normalise raw CryptoPanic news data.
+    Validate, filter, and normalise raw Cryptcompare news data.
 
     Renames published_at to timestamp to match the unified schema,
     then validates columns, filters to supported assets, and floors

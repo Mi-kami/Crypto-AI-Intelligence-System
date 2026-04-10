@@ -19,7 +19,7 @@ Run manually:
 from loguru import logger
 
 from ingestion.coingecko_client import fetch_all_assets, fetch_global_market_data
-from ingestion.cryptopanic_client import fetch_all_assets_news
+from ingestion.cryptocompare_client import fetch_all_assets_news
 from ingestion.harmoniser import (
     harmonise_price_data,
     harmonise_market_data,
