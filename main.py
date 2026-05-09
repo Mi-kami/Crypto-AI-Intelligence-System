@@ -26,25 +26,11 @@ from ingestion.harmoniser import (
     harmonise_news_data,
 )
 
-
-# ── Placeholder Storage Writers ───────────────────────────────────────────────
-# These functions stand in for the real storage writers until Phase 2.
-# When storage/writer.py is built, these calls are replaced with the real ones.
-# Nothing else in this file needs to change.
-
-def write_price_data(df):
-    """Phase 2 placeholder — will write OHLCV rows to price_ohlcv table."""
-    logger.info(f"[PLACEHOLDER] Would write {len(df)} price rows to storage")
-
-
-def write_market_data(df):
-    """Phase 2 placeholder — will write market signals row to market_signals table."""
-    logger.info(f"[PLACEHOLDER] Would write {len(df)} market row to storage")
-
-
-def write_news_data(df):
-    """Phase 2 placeholder — will write headlines to news_headlines table."""
-    logger.info(f"[PLACEHOLDER] Would write {len(df)} news headlines to storage")
+from storage.writer import (
+    write_price_data,
+    write_market_signals,
+    write_news_headlines
+)
 
 
 # ── Pipeline Orchestrator ─────────────────────────────────────────────────────
@@ -83,18 +69,18 @@ def run_ingestion_pipeline(days: int = 1) -> None:
         logger.info("Starting market data ingestion...")
         raw_market_dict = fetch_global_market_data()
         clean_market_df = harmonise_market_data(raw_market_dict)
-        write_market_data(clean_market_df)
+        write_market_signals(clean_market_df)
         results["market"] = True
 
     except Exception as e:
         logger.error(f"Market ingestion failed — skipping. Error: {e}")
 
-    # ── News Data (CryptoPanic) ──────────────────────────────────────────
+    # ── News Data (Cryptocomparec) ──────────────────────────────────────────
     try:
         logger.info("Starting news data ingestion...")
         raw_news_df = fetch_all_assets_news()
         clean_news_df = harmonise_news_data(raw_news_df)
-        write_news_data(clean_news_df)
+        write_news_headlines(clean_news_df)
         results["news"] = True
 
     except Exception as e:
