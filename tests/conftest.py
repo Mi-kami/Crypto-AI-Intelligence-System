@@ -15,7 +15,10 @@ Three fixture groups:
 
 import pytest
 import pandas as pd
+import sqlite3
+from pathlib import Path
 from datetime import datetime, timezone
+from storage.schema import create_tables
 
 
 # ── Group 1: Fake Raw API Payloads ────────────────────────────────────────────
@@ -172,3 +175,59 @@ def news_df_missing_published_at() -> pd.DataFrame:
         "votes_negative": 0,
         "source":         "cryptocompare",
     }])
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> Path:
+    """
+    Create a temporary SQLite database with all three tables
+    and sample rows for reader tests.
+    """
+    path = tmp_path / "test.db"
+    create_tables(db_path=path)
+
+    conn = sqlite3.connect(path)
+    try:
+        # ── price_ohlcv sample rows ──────────────────────────────────────
+        conn.executemany(
+            """
+            INSERT INTO price_ohlcv (asset, timestamp, close, market_cap, volume, source)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("BTC", "2025-01-01T00:00:00+00:00", 95000.0, 1800000000000.0, 30000000000.0, "coingecko"),
+                ("BTC", "2025-01-01T01:00:00+00:00", 95500.0, 1810000000000.0, 31000000000.0, "coingecko"),
+                ("ETH", "2025-01-01T00:00:00+00:00", 3400.0,  400000000000.0,  15000000000.0, "coingecko"),
+            ]
+        )
+
+        # ── market_signals sample rows ───────────────────────────────────
+        conn.executemany(
+            """
+            INSERT INTO market_signals (timestamp, btc_dominance, total_market_cap_usd, total_volume_usd, source)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                ("2025-01-01T00:00:00+00:00", 56.3, 2500000000000.0, 80000000000.0, "coingecko"),
+                ("2025-01-01T01:00:00+00:00", 56.5, 2510000000000.0, 81000000000.0, "coingecko"),
+            ]
+        )
+
+        # ── news_headlines sample rows ───────────────────────────────────
+        conn.executemany(
+            """
+            INSERT INTO news_headlines (asset, timestamp, headline, url, votes_positive, votes_negative, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                ("BTC", "2025-01-01T00:00:00+00:00", "Bitcoin hits new high", "https://example.com/btc1", 0, 0, "cryptocompare"),
+                ("BTC", "2025-01-01T01:00:00+00:00", "BTC dominance rises",   "https://example.com/btc2", 0, 0, "cryptocompare"),
+                ("ETH", "2025-01-01T00:00:00+00:00", "Ethereum upgrade live", "https://example.com/eth1", 0, 0, "cryptocompare"),
+            ]
+        )
+
+        conn.commit()
+
+    finally:
+        conn.close()
+
+    return path
