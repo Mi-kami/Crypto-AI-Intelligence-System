@@ -112,7 +112,6 @@ def run_ingestion_pipeline(days: int = 1) -> dict:
 
 
 # ── Feature Pipeline ──────────────────────────────────────────────────────────
-
 def run_feature_pipeline() -> pd.DataFrame:
     """
     Read raw data from storage, compute price, market, sentiment,
@@ -123,10 +122,73 @@ def run_feature_pipeline() -> pd.DataFrame:
         DataFrame containing all computed features across all assets.
         Returns empty DataFrame if any critical feature stage fails.
     """
-    pass
+    logger.info("─" * 60)
+    logger.info("Feature pipeline started")
+    logger.info("─" * 60)
 
+    results = {
+        "price_features":     False,
+        "market_features":    False,
+        "sentiment_features": False,
+        "master_features":    False,
+    }
 
-# ── Model Pipeline ────────────────────────────────────────────────────────────
+    # ── Price Features ────────────────────────────────────────────────────
+    try:
+        logger.info("Computing price features...")
+        # Phase 3: call build_price_features() here
+        results["price_features"] = True
+
+    except Exception as e:
+        logger.error(f"Price features failed: {e}")
+
+    # ── Market Features ───────────────────────────────────────────────────
+    try:
+        logger.info("Computing market features...")
+        # Phase 3: call build_market_features() here
+        results["market_features"] = True
+
+    except Exception as e:
+        logger.error(f"Market features failed: {e}")
+
+    # ── Sentiment Features ────────────────────────────────────────────────
+    try:
+        logger.info("Computing sentiment features...")
+        # Phase 3: call build_sentiment_features() here
+        results["sentiment_features"] = True
+
+    except Exception as e:
+        logger.error(f"Sentiment features failed: {e}")
+
+    # ── Master Features (conditional execution gate) ───────────────────────
+    # Master depends on price and market. Sentiment failure is tolerated.
+    if not results["price_features"]:
+        logger.warning("Master features aborted — price features failed")
+    elif not results["market_features"]:
+        logger.warning("Master features aborted — market features failed")
+    else:
+        try:
+            logger.info("Computing master features...")
+            # Phase 3: call build_master_features() here
+            results["master_features"] = True
+
+        except Exception as e:
+            logger.error(f"Master features failed: {e}")
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    logger.info("─" * 60)
+    succeeded = [k for k, v in results.items() if v]
+    failed    = [k for k, v in results.items() if not v]
+
+    if succeeded:
+        logger.success(f"Feature pipeline complete — succeeded: {succeeded}")
+    if failed:
+        logger.warning(f"Feature pipeline complete — failed: {failed}")
+
+    logger.info("─" * 60)
+
+    return pd.DataFrame()
+
 
 def run_model_pipeline(features: pd.DataFrame) -> dict:
     """
@@ -140,10 +202,79 @@ def run_model_pipeline(features: pd.DataFrame) -> dict:
     Returns:
         Dictionary tracking success/failure of each model stage.
     """
-    pass
+    logger.info("─" * 60)
+    logger.info("Model pipeline started")
+    logger.info("─" * 60)
 
+    results = {
+        "volatility": False,
+        "regime":     False,
+        "sentiment":  False,
+        "risk":       False,
+    }
 
-# ── Top-Level Orchestrator ────────────────────────────────────────────────────
+    # ── Volatility (GARCH + LSTM) ─────────────────────────────────────────
+    try:
+        logger.info("Running volatility model...")
+        # Phase 4: call run_volatility_model(features) here
+        results["volatility"] = True
+
+    except Exception as e:
+        logger.error(f"Volatility model failed: {e}")
+
+    # ── Regime Detection (HMM) ────────────────────────────────────────────
+    if not results["volatility"]:
+        logger.warning("Regime detection aborted — volatility model failed")
+    else:
+        try:
+            logger.info("Running regime detection...")
+            # Phase 4: call run_regime_model(features) here
+            results["regime"] = True
+
+        except Exception as e:
+            logger.error(f"Regime detection failed: {e}")
+
+    # ── Sentiment Analysis (FinBERT) ──────────────────────────────────────
+    if not results["regime"]:
+        logger.warning("Sentiment model aborted — regime detection failed")
+    else:
+        try:
+            logger.info("Running sentiment analysis...")
+            # Phase 4: call run_sentiment_model(features) here
+            results["sentiment"] = True
+
+        except Exception as e:
+            logger.error(f"Sentiment model failed: {e}")
+
+    # ── Risk Scorer (composite) ───────────────────────────────────────────
+    # Risk requires volatility and regime. Sentiment failure is tolerated.
+    if not results["volatility"]:
+        logger.warning("Risk scorer aborted — volatility model failed")
+    elif not results["regime"]:
+        logger.warning("Risk scorer aborted — regime detection failed")
+    else:
+        try:
+            logger.info("Running risk scorer...")
+            # Phase 4: call run_risk_scorer(features) here
+            results["risk"] = True
+
+        except Exception as e:
+            logger.error(f"Risk scorer failed: {e}")
+
+    # ── Summary ───────────────────────────────────────────────────────────
+    logger.info("─" * 60)
+    succeeded = [k for k, v in results.items() if v]
+    failed    = [k for k, v in results.items() if not v]
+
+    if succeeded:
+        logger.success(f"Model pipeline complete — succeeded: {succeeded}")
+    if failed:
+        logger.warning(f"Model pipeline complete — failed: {failed}")
+
+    logger.info("─" * 60)
+
+    return results
+
 
 def run_pipeline(days: int = 1) -> dict:
     """
@@ -160,8 +291,57 @@ def run_pipeline(days: int = 1) -> dict:
     Returns:
         Dictionary tracking success/failure of all pipeline stages.
     """
-    pass
+    logger.info("═" * 60)
+    logger.info("Full pipeline started")
+    logger.info("═" * 60)
 
+    # ── Stage 1: Ingestion ────────────────────────────────────────────────
+    ingestion_results = run_ingestion_pipeline(days=days)
+
+    # Gate: both price and market must succeed for features to be meaningful
+    if not ingestion_results["price"] or not ingestion_results["market"]:
+        logger.error(
+            "Pipeline aborted — critical ingestion sources failed. "
+            "Feature engineering will not run."
+        )
+        return {**ingestion_results}
+
+    # ── Stage 2: Feature Engineering ─────────────────────────────────────
+    feature_df = run_feature_pipeline()
+
+    feature_results = {
+        "price_features":     not feature_df.empty,
+        "market_features":    not feature_df.empty,
+        "sentiment_features": not feature_df.empty,
+        "master_features":    not feature_df.empty,
+    }
+
+    # Gate: master features must exist for models to run
+    if feature_df.empty:
+        logger.error(
+            "Pipeline aborted — feature engineering produced no output. "
+            "Model inference will not run."
+        )
+        return {**ingestion_results, **feature_results}
+
+    # ── Stage 3: Model Inference ──────────────────────────────────────────
+    model_results = run_model_pipeline(features=feature_df)
+
+    # ── Final Summary ─────────────────────────────────────────────────────
+    all_results = {**ingestion_results, **feature_results, **model_results}
+
+    logger.info("═" * 60)
+    succeeded = [k for k, v in all_results.items() if v]
+    failed    = [k for k, v in all_results.items() if not v]
+
+    if succeeded:
+        logger.success(f"Full pipeline complete — succeeded: {succeeded}")
+    if failed:
+        logger.warning(f"Full pipeline complete — failed: {failed}")
+
+    logger.info("═" * 60)
+
+    return all_results
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
