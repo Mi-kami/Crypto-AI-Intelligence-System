@@ -1,21 +1,21 @@
 """
 main.py
 
-Ingestion pipeline orchestrator for the Crypto AI Intelligence System.
+Full pipeline orchestrator for the Crypto AI Intelligence System.
 
-Coordinates all three data sources — price, market, and news — by calling
-the ingestion clients, passing raw data through the harmoniser, and writing
-clean DataFrames to storage.
+Coordinates all pipeline stages sequentially:
+    1. Ingestion    — fetch, harmonise, write raw data to storage
+    2. Feature      — read from storage, compute features
+    3. Model        — run intelligence model inference
 
-Each data source runs independently. A failure in one source must never
-prevent the other two from completing.
-
-Phase 1: Storage writes are placeholders — replaced in Phase 2.
+Each stage gates the next. Ingestion failure aborts feature engineering.
+Feature engineering failure aborts model inference.
 
 Run manually:
     python main.py
 """
 
+import pandas as pd
 from loguru import logger
 
 from ingestion.coingecko_client import fetch_all_assets, fetch_global_market_data
@@ -25,33 +25,43 @@ from ingestion.harmoniser import (
     harmonise_market_data,
     harmonise_news_data,
 )
-
 from storage.writer import (
     write_price_data,
     write_market_signals,
-    write_news_headlines
+    write_news_headlines,
+)
+from storage.reader import (
+    read_price_data,
+    read_market_signals,
+    read_news_headlines,
 )
 
 
-# ── Pipeline Orchestrator ─────────────────────────────────────────────────────
+# ── Ingestion Pipeline ────────────────────────────────────────────────────────
 
-def run_ingestion_pipeline(days: int = 1) -> None:
+def run_ingestion_pipeline(days: int = 1) -> dict:
     """
     Run the full data ingestion pipeline for all three data sources.
 
-    Fetches price, market, and news data sequentially. Each source is
-    wrapped in its own try/except block so a failure in one source
+    Fetches and writes price, market, and news data sequentially into the database.
+    Each source is wrapped in its own try/except block so a failure in one source
     never prevents the other two from completing.
 
     Args:
         days: Number of days of OHLCV history to fetch per asset (default 1)
+
+    Returns:
+        Dictionary tracking success/failure of each ingestion source.
     """
     logger.info("─" * 60)
     logger.info("Ingestion pipeline started")
     logger.info("─" * 60)
 
-    # Track which sources succeeded and which failed
-    results = {"price": False, "market": False, "news": False}
+    results = {
+        "price":  False,
+        "market": False,
+        "news":   False,
+    }
 
     # ── Price Data (CoinGecko OHLCV) ─────────────────────────────────────
     try:
@@ -75,7 +85,7 @@ def run_ingestion_pipeline(days: int = 1) -> None:
     except Exception as e:
         logger.error(f"Market ingestion failed — skipping. Error: {e}")
 
-    # ── News Data (Cryptocomparec) ──────────────────────────────────────────
+    # ── News Data (CryptoCompare) ─────────────────────────────────────────
     try:
         logger.info("Starting news data ingestion...")
         raw_news_df = fetch_all_assets_news()
@@ -86,22 +96,74 @@ def run_ingestion_pipeline(days: int = 1) -> None:
     except Exception as e:
         logger.error(f"News ingestion failed — skipping. Error: {e}")
 
-    # ── Pipeline Summary ─────────────────────────────────────────────────
+    # ── Summary ───────────────────────────────────────────────────────────
     logger.info("─" * 60)
-    succeeded = [source for source, ok in results.items() if ok]
-    failed = [source for source, ok in results.items() if not ok]
+    succeeded = [k for k, v in results.items() if v]
+    failed    = [k for k, v in results.items() if not v]
 
     if succeeded:
-        logger.success(f"Pipeline complete — succeeded: {succeeded}")
+        logger.success(f"Ingestion complete — succeeded: {succeeded}")
     if failed:
-        logger.warning(f"Pipeline complete — failed sources: {failed}")
-    if not failed:
-        logger.success("All three sources ingested successfully")
+        logger.warning(f"Ingestion complete — failed: {failed}")
 
     logger.info("─" * 60)
+
+    return results
+
+
+# ── Feature Pipeline ──────────────────────────────────────────────────────────
+
+def run_feature_pipeline() -> pd.DataFrame:
+    """
+    Read raw data from storage, compute price, market, sentiment,
+    and master features, and return a single unified DataFrame
+    ready for model inference.
+
+    Returns:
+        DataFrame containing all computed features across all assets.
+        Returns empty DataFrame if any critical feature stage fails.
+    """
+    pass
+
+
+# ── Model Pipeline ────────────────────────────────────────────────────────────
+
+def run_model_pipeline(features: pd.DataFrame) -> dict:
+    """
+    Run inference across all four intelligence models — volatility
+    (GARCH+LSTM), regime (HMM), sentiment (FinBERT), and composite
+    risk scorer — using the unified feature DataFrame as input.
+
+    Args:
+        features: Unified feature DataFrame from run_feature_pipeline()
+
+    Returns:
+        Dictionary tracking success/failure of each model stage.
+    """
+    pass
+
+
+# ── Top-Level Orchestrator ────────────────────────────────────────────────────
+
+def run_pipeline(days: int = 1) -> dict:
+    """
+    Top-level orchestrator for the full Crypto AI Intelligence pipeline.
+
+    Calls run_ingestion_pipeline(), run_feature_pipeline(), and
+    run_model_pipeline() sequentially. Each stage gates the next —
+    if ingestion fails, feature engineering does not run.
+    If feature engineering fails, model inference does not run.
+
+    Args:
+        days: Number of days of OHLCV history to fetch (default 1)
+
+    Returns:
+        Dictionary tracking success/failure of all pipeline stages.
+    """
+    pass
 
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    run_ingestion_pipeline()
+    run_pipeline()
