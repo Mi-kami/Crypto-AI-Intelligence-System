@@ -63,6 +63,21 @@ CREATE TABLE IF NOT EXISTS news_headlines (
     UNIQUE (asset, url)
 )
 """
+CREATE_ASSET_FEATURES = """
+CREATE TABLE IF NOT EXISTS asset_features(
+    asset                   TEXT NOT NULL,
+    timestamp               TEXT NOT NULL,
+    log_return              REAL,
+    rolling_volatility_24h  REAL,
+    momentum_24h            REAL,
+    volume_ratio            REAL,
+    volume_momentum         REAL,
+    feature_version         TEXT NOT NULL,
+    created_at              TEXT NOT NULL,
+    PRIMARY KEY(asset, timestamp, feature_version)
+)
+"""
+
 
 # ── Index Definitions ────────────────────────────────────────────────────────
 
@@ -81,6 +96,10 @@ CREATE INDEX IF NOT EXISTS idx_news_asset_timestamp
 ON news_headlines (asset, timestamp)
 """
 
+CREATE_INDEX_FEATURE = """
+CREATE INDEX IF NOT EXISTS idx_features_asset_timestamp
+ON asset_features(asset, timestamp)
+"""
 
 # ── Core Function ────────────────────────────────────────────────────────────
 
@@ -116,10 +135,14 @@ def create_tables(db_path: Path = DB_PATH) -> None:
         cursor.execute(CREATE_NEWS_HEADLINES)
         logger.info("Table ready: news_headlines")
 
+        cursor.execute(CREATE_ASSET_FEATURES)
+        logger.info("Table ready: asset_features")
+
         # Create indexes
         cursor.execute(CREATE_INDEX_PRICE)
         cursor.execute(CREATE_INDEX_MARKET)
         cursor.execute(CREATE_INDEX_NEWS)
+        cursor.execute(CREATE_INDEX_FEATURE)
         logger.info("Indexes ready")
 
         conn.commit()
