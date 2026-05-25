@@ -1,0 +1,14 @@
+artifact_uri: file:C:/Users/USER/Documents/Crypto-AI-Intelligence-System/mlruns/362787748271966280/c1ccb5fdd3c044488453ac1645e1beaf/artifacts
+end_time: 1779742267804
+entry_point_name: ''
+experiment_id: '362787748271966280'
+lifecycle_stage: active
+run_id: c1ccb5fdd3c044488453ac1645e1beaf
+run_name: smoke_test
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1779742267747
+status: 3
+tags: []
+user_id: USER
