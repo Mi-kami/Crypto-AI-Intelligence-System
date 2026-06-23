@@ -18,6 +18,12 @@ Run manually:
 import pandas as pd
 from loguru import logger
 
+from datetime import datetime, timezone, timedelta
+
+from features.price_features import build_price_features
+from features.market_features import build_market_features
+from features.sentiment_features import build_sentiment_features
+from features.master_features import build_master_features
 from ingestion.coingecko_client import fetch_all_assets, fetch_global_market_data
 from ingestion.cryptocompare_client import fetch_all_assets_news
 from ingestion.harmoniser import (
@@ -118,13 +124,34 @@ def run_feature_pipeline() -> pd.DataFrame:
     and master features, and return a single unified DataFrame
     ready for model inference.
 
+    This function is the only place in the pipeline that reads
+    from the database. All feature builders receive DataFrames
+    — they never touch the DB directly.
+
+    Time window: last 48 hours. This gives rolling features
+    (which need 24 rows minimum) enough history to produce
+    valid non-NaN values from the first run.
+
     Returns:
-        DataFrame containing all computed features across all assets.
-        Returns empty DataFrame if any critical feature stage fails.
+        Unified master feature DataFrame across all assets.
+        Returns empty DataFrame if price or market features fail.
     """
     logger.info("─" * 60)
     logger.info("Feature pipeline started")
     logger.info("─" * 60)
+
+    # ── Time window ───────────────────────────────────────────────────────
+    # 48 hours gives rolling_volatility_24h and momentum_24h enough
+    # history to produce valid values. Without this buffer, the first
+    # 24 rows per asset would all be NaN.
+    end   = datetime.now(tz=timezone.utc)
+    start = end - timedelta(hours=48)
+
+    # ── Assets ────────────────────────────────────────────────────────────
+    assets = [
+        "BTC", "ETH", "BNB", "XRP", "SOL",
+        "DOGE", "ADA", "TRX", "AVAX", "SHIB",
+    ]
 
     results = {
         "price_features":     False,
@@ -133,11 +160,28 @@ def run_feature_pipeline() -> pd.DataFrame:
         "master_features":    False,
     }
 
+    price_feature_df     = pd.DataFrame()
+    market_feature_df    = pd.DataFrame()
+    sentiment_feature_df = pd.DataFrame()
+    master_feature_df    = pd.DataFrame()
+
     # ── Price Features ────────────────────────────────────────────────────
     try:
         logger.info("Computing price features...")
-        # Phase 3: call build_price_features() here
-        results["price_features"] = True
+
+        # Read price data for all assets and combine into one DataFrame
+        price_frames = []
+        for asset in assets:
+            df = read_price_data(asset=asset, start=start, end=end)
+            if not df.empty:
+                price_frames.append(df)
+
+        if price_frames:
+            raw_price_df     = pd.concat(price_frames, ignore_index=True)
+            price_feature_df = build_price_features(raw_price_df)
+            results["price_features"] = True
+        else:
+            logger.warning("No price data in DB for the last 48 hours")
 
     except Exception as e:
         logger.error(f"Price features failed: {e}")
@@ -145,8 +189,14 @@ def run_feature_pipeline() -> pd.DataFrame:
     # ── Market Features ───────────────────────────────────────────────────
     try:
         logger.info("Computing market features...")
-        # Phase 3: call build_market_features() here
-        results["market_features"] = True
+
+        raw_market_df = read_market_signals(start=start, end=end)
+
+        if not raw_market_df.empty:
+            market_feature_df = build_market_features(raw_market_df)
+            results["market_features"] = True
+        else:
+            logger.warning("No market data in DB for the last 48 hours")
 
     except Exception as e:
         logger.error(f"Market features failed: {e}")
@@ -154,14 +204,30 @@ def run_feature_pipeline() -> pd.DataFrame:
     # ── Sentiment Features ────────────────────────────────────────────────
     try:
         logger.info("Computing sentiment features...")
-        # Phase 3: call build_sentiment_features() here
-        results["sentiment_features"] = True
+
+        # Read news for all assets and combine
+        news_frames = []
+        for asset in assets:
+            df = read_news_headlines(asset=asset, start=start, end=end)
+            if not df.empty:
+                news_frames.append(df)
+
+        if news_frames:
+            raw_news_df          = pd.concat(news_frames, ignore_index=True)
+            sentiment_feature_df = build_sentiment_features(raw_news_df)
+            results["sentiment_features"] = True
+        else:
+            # Sentiment absence is tolerated — pipeline continues
+            logger.warning(
+                "No news data in DB for the last 48 hours — "
+                "sentiment features will be NaN in master output"
+            )
 
     except Exception as e:
         logger.error(f"Sentiment features failed: {e}")
 
-    # ── Master Features (conditional execution gate) ───────────────────────
-    # Master depends on price and market. Sentiment failure is tolerated.
+    # ── Master Features ───────────────────────────────────────────────────
+    # Price and market are mandatory. Sentiment failure is tolerated.
     if not results["price_features"]:
         logger.warning("Master features aborted — price features failed")
     elif not results["market_features"]:
@@ -169,7 +235,11 @@ def run_feature_pipeline() -> pd.DataFrame:
     else:
         try:
             logger.info("Computing master features...")
-            # Phase 3: call build_master_features() here
+            master_feature_df = build_master_features(
+                price_df=price_feature_df,
+                market_df=market_feature_df,
+                sentiment_df=sentiment_feature_df,
+            )
             results["master_features"] = True
 
         except Exception as e:
@@ -187,8 +257,7 @@ def run_feature_pipeline() -> pd.DataFrame:
 
     logger.info("─" * 60)
 
-    return pd.DataFrame()
-
+    return master_feature_df
 
 def run_model_pipeline(features: pd.DataFrame) -> dict:
     """
